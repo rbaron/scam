@@ -55,14 +55,26 @@ void strncpy2(char *from, char *to, int n_bytes) {
   //printf("Done.\n");
 }
 
+int isspace2(char c) {
+  return (c == ' ' || c == '\t' || c == '\n');
+}
+
 int tokenize(char *str, char *tokens[]) {
   int n = 0;
+  int inside_string = 0;
+  char *start;
 
-  for (char *start = str; *str; str++) {
-    if (*str == ' ') {
-      tokens[n] = (char *) malloc(str - start + 1);
-      strncpy2(start, tokens[n++], (int) (str - start));
+  for (start = str; *str; str++) {
+
+    if (isspace2(*str) && !inside_string) {
+
+      // It is terminating some expression
+      if (start != str) {
+        tokens[n] = (char *) malloc(str - start + 1);
+        strncpy2(start, tokens[n++], (int) (str - start));
+      }
       start = str + 1;
+
     } else if (*str == '(' || *str == ')') {
 
       // Maybe flush token being current parsed
@@ -76,14 +88,29 @@ int tokenize(char *str, char *tokens[]) {
       strncpy2(start, tokens[n++], 1);
       start = str + 1;
 
-    //} else if (*str == EOF) {
-    //  if (start != str) {
-    //    tokens[n] = (char *) malloc(str - start + 1);
-    //    strncpy2(start, tokens[n++], (int) (str - start));
-    //    start = str;
-    //  }
+    } else if (*str == '"') {
+
+      // Starting string
+      if (!inside_string) {
+        inside_string = 1;
+        start = str;
+
+      // Finishing string
+      } else {
+        inside_string = 0;
+        tokens[n] = (char *) malloc(str - start + 2);
+        strncpy2(start, tokens[n++], (int) (str - start + 1));
+        start = str + 1;
+      }
     }
   }
+
+  // EOF was read. Flush the current epxression, if any.
+  if (start != str) {
+    tokens[n] = (char *) malloc(str - start + 1);
+    strncpy2(start, tokens[n++], (int) (str - start));
+  }
+
   return n;
 }
 
@@ -149,17 +176,23 @@ void print_ast(struct expr *root, int indent) {
   }
 }
 
-int main(int argc, char **argv) {
+void test_tokenize(char *code) {
   char *tokens[MAX_SUB_EXPR];
-  //int n_tokens = tokenize("(+ 1 (* 2 3) (/ 4 5))", tokens);
-  int n_tokens = tokenize("1", tokens);
+  int n_tokens = tokenize(code, tokens);
 
+  printf("Will tokenize %s\n", code);
   printf("Tokenize found %d tokens\n", n_tokens);
 
   for (int i = 0; i < n_tokens; i++) {
     printf("%s, ", tokens[i]);
   }
   printf ("\n");
+}
+
+int main(int argc, char **argv) {
+  //char *tokens[MAX_SUB_EXPR];
+  //int n_tokens = tokenize("(+ 1 (* 2 3) (/ 4 5))", tokens);
+  //int n_tokens = tokenize("1", tokens);
 
   //struct expr root;
   ////root.type = COMPOUND;
@@ -169,6 +202,13 @@ int main(int argc, char **argv) {
   //print_ast(&root, 0);
 
   ////printf("strcmp2: %d\n", strcmp2("abcd", "abce"));
+
+  test_tokenize("");
+  test_tokenize("2");
+  test_tokenize("(+ 1 2)");
+  test_tokenize("    ( +      \t 1 2 )    \t  ");
+  test_tokenize("(+ \"aa a\")");
+  test_tokenize("(+ 1 2)\n(+ 2 3)");
 }
 
 //(+ (+ 1 2) (* 4 5))
