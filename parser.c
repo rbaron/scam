@@ -14,49 +14,34 @@ struct expr {
   int n_children;
 };
 
-struct text {
-  char *text;
-  long pos;
-};
-
-int strcmp2(char *, char *);
-
-//struct expr parse(struct text *code) {
-//  char *c = code->text;
-//  struct expr e;
-//
-//  if (*c == '(') {
-//    e.type = COMPOUND;
-//    e.text = code->text;
-//    // parse subexprs
-//    printf("Parsing subexpressions...\n");
-//    for (code->pos++; *(c = code->text + code->pos); code->pos++) {
-//      printf("Got character: %c\n", *c);
-//    }
-//
-//  } else {
-//    e.type = LITERAL;
-//    e.text = code->text;
-//
-//
-//  }
-//  //for (c = text; *c; c++) {
-//  //  printf("Got character: %c", *c);
-//  //}
-//  return e;
-//}
-
 void strncpy2(char *from, char *to, int n_bytes) {
-  //printf("Copying %d bytes...\n", n_bytes);
   for (int i = 0; i < n_bytes; i++) {
     to[i] = from[i];
   }
   to[n_bytes] = '\0';
-  //printf("Done.\n");
+}
+
+int strlen2(char *str) {
+  int i;
+  for (i = 0; *str; str++, i++)
+    ;
+  return i;
+}
+
+int strcmp2(char *a, char *b) {
+  for (; *a == *b; a++, b++)
+    if (*a == '\0' && *b == '\0')
+      return 0;
+  return *a - *b;
 }
 
 int isspace2(char c) {
   return (c == ' ' || c == '\t' || c == '\n');
+}
+
+void allocate_and_copy(char *tokens[], int token_index, char *start, int len) {
+  tokens[token_index] = (char *) malloc(len + 1);
+  strncpy2(start, tokens[token_index], len);
 }
 
 int tokenize(char *str, char *tokens[]) {
@@ -70,22 +55,19 @@ int tokenize(char *str, char *tokens[]) {
 
       // It is terminating some expression
       if (start != str) {
-        tokens[n] = (char *) malloc(str - start + 1);
-        strncpy2(start, tokens[n++], (int) (str - start));
+        allocate_and_copy(tokens, n++, start, str - start);
       }
       start = str + 1;
 
     } else if (*str == '(' || *str == ')') {
 
-      // Maybe flush token being current parsed
+      // Maybe flush token being currently parsed
       if (start != str) {
-        tokens[n] = (char *) malloc(str - start + 1);
-        strncpy2(start, tokens[n++], (int) (str - start));
+        allocate_and_copy(tokens, n++, start, str - start);
         start = str;
       }
 
-      tokens[n] = (char *) malloc(2);
-      strncpy2(start, tokens[n++], 1);
+      allocate_and_copy(tokens, n++, start, 1);
       start = str + 1;
 
     } else if (*str == '"') {
@@ -98,17 +80,15 @@ int tokenize(char *str, char *tokens[]) {
       // Finishing string
       } else {
         inside_string = 0;
-        tokens[n] = (char *) malloc(str - start + 2);
-        strncpy2(start, tokens[n++], (int) (str - start + 1));
+        allocate_and_copy(tokens, n++, start, str - start + 1);
         start = str + 1;
       }
     }
   }
 
-  // EOF was read. Flush the current epxression, if any.
+  // EOF was read. Maybe flush token being currently parsed
   if (start != str) {
-    tokens[n] = (char *) malloc(str - start + 1);
-    strncpy2(start, tokens[n++], (int) (str - start));
+    allocate_and_copy(tokens, n++, start, str - start);
   }
 
   return n;
@@ -145,20 +125,6 @@ int parse(char *tokens[], struct expr *e) {
     tokens++;
   }
   return tokens - base;
-}
-
-int strlen2(char *str) {
-  int i;
-  for (i = 0; *str; str++, i++)
-    ;
-  return i;
-}
-
-int strcmp2(char *a, char *b) {
-  for (; *a == *b; a++, b++)
-    if (*a == '\0' && *b == '\0')
-      return 0;
-  return *a - *b;
 }
 
 void print_ast(struct expr *root, int indent) {
