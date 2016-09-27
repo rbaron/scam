@@ -4,11 +4,28 @@
 #define MAX_SUB_EXPR 20
 
 enum expr_type {
-  COMPOUND, LITERAL
+  COMPOUND,
+  NUMBER,
+  STRING,
+  SYMBOL,
+};
+
+const char *type_names[] = {
+  "COMPOUND",
+  "NUMBER",
+  "STRING",
+  "SYMBOL",
+};
+
+union values {
+  double number;
+  char *string;
+  char *symbol;
 };
 
 struct expr {
   enum expr_type type;
+  char *human_type;
   char *text;
   struct expr *children[MAX_SUB_EXPR];
   int n_children;
@@ -37,6 +54,64 @@ int strcmp2(char *a, char *b) {
 
 int isspace2(char c) {
   return (c == ' ' || c == '\t' || c == '\n');
+}
+
+int isnumber2(char *token) {
+  int n_dots = 0;
+  char *start = token;
+
+  for (; *token; token++) {
+    if (*token > '9' || *token < '0') {
+
+      // Only one dot
+      if (*token == '.' && n_dots++ == 0) {
+        continue;
+
+      // Sign only in the beginning
+      } else if (*token == '-' && token == start) {
+        continue;
+
+      } else {
+        return 0;
+      }
+    }
+  }
+
+  // empty string is not a number
+  return start != token;
+}
+
+int issymbol2(char *token) {
+  char *start = token;
+
+  if (*token >= '0' && *token <= '9')
+    return 0;
+
+  for (; *token; token++)
+    if (*token == '"' || *token == ' ')
+      return 0;
+
+  // empty string is not a symbol
+  return start != token;
+}
+
+int isstring2(char *token) {
+  char *start = token;
+
+  if (*token != '"')
+    return 0;
+
+  while (*token) {
+    printf("D: %c\n", *token);
+    if (*token == '"' && start != token && *(token+1) != '\0') {
+      return 0;
+    }
+
+    token++;
+  }
+
+  // empty string is not a symbol
+  return start != token && *(token-1) == '"';
 }
 
 void allocate_and_copy(char *tokens[], int token_index, char *start, int len) {
@@ -94,6 +169,23 @@ int tokenize(char *str, char *tokens[]) {
   return n;
 }
 
+int parse_literal(char *token, struct expr *e) {
+  if (isnumber2(token)) {
+    e->type = NUMBER;
+    e->text = token;
+  } else if (isstring2(token)) {
+    e->type = STRING;
+    e->text = token;
+  } else if (issymbol2(token)) {
+    e->type = SYMBOL;
+    e->text = token;
+  } else {
+    fprintf(stderr, "Unknown literal: %s\n", token);
+    exit(1);
+  }
+  return 0;
+}
+
 int parse(char *tokens[], struct expr *e) {
   char **base = tokens;
   int step;
@@ -120,8 +212,10 @@ int parse(char *tokens[], struct expr *e) {
 
   // Literal expression
   } else {
-    e->type = LITERAL;
-    e->text = tokens[0];
+
+    parse_literal(tokens[0], e);
+    //e->type = LITERAL;
+    //e->text = tokens[0];
     tokens++;
   }
   return tokens - base;
@@ -137,7 +231,7 @@ void print_ast(struct expr *root, int indent) {
       print_ast(root->children[i], indent+1);
     }
   } else {
-    printf("LITERAL ");
+    printf("%s ", type_names[root->type]);
     printf("%s\n", root->text);
   }
 }
@@ -153,6 +247,11 @@ void test_tokenize(char *code) {
     printf("%s, ", tokens[i]);
   }
   printf ("\n");
+
+  struct expr root;
+  parse(tokens, &root);
+
+  print_ast(&root, 0);
 }
 
 int main(int argc, char **argv) {
@@ -169,12 +268,18 @@ int main(int argc, char **argv) {
 
   ////printf("strcmp2: %d\n", strcmp2("abcd", "abce"));
 
-  test_tokenize("");
-  test_tokenize("2");
-  test_tokenize("(+ 1 2)");
-  test_tokenize("    ( +      \t 1 2 )    \t  ");
-  test_tokenize("(+ \"aa a\")");
-  test_tokenize("(+ 1 2)\n(+ 2 3)");
+  //test_tokenize("");
+  //test_tokenize("2");
+  //test_tokenize("(+ 1 2)");
+  //test_tokenize("    ( +      \t 1 2 )    \t  ");
+  //test_tokenize("(+ \"aa a\")");
+  //test_tokenize("(+ 1 2)\n(+ 2 3)");
+  test_tokenize("(+ (* 1 2)\n(/ 3 4 (my-fun 5 6 \"hehe \")))");
+  //struct vresult
+  //printf("%d\n", isnumber2("23.0123"));
+  //printf("%d\n", issymbol2("-aaa"));
+  //printf("%d\n", issymbol2("aa12 3a"));
+  //printf("%d\n", isstring2("\"aa'12 3a\""));
 }
 
 //(+ (+ 1 2) (* 4 5))
