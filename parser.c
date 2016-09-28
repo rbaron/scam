@@ -102,7 +102,6 @@ int isstring2(char *token) {
     return 0;
 
   while (*token) {
-    printf("D: %c\n", *token);
     if (*token == '"' && start != token && *(token+1) != '\0') {
       return 0;
     }
@@ -231,6 +230,10 @@ void print_expr(struct expr *e) {
     printf("STRING %s", e->value.string);
   } else if (e->type == SYMBOL) {
     printf("SYMBOL %s", e->value.symbol);
+  } else if (e->type == COMPOUND) {
+    printf("COMPOUND");
+  } else {
+    printf("UNKNOWN TYPE");
   }
   printf("\n");
 }
@@ -297,22 +300,41 @@ struct expr *define_env_var(struct env *environ, char *key, struct expr *value) 
 }
 
 struct expr *eval(struct expr *e, struct env *environ) {
+  printf("EVAL: ");
+  print_expr(e);
+
   if (e->type == NUMBER || e->type == STRING) {
     return e;
 
   } else if (e->type == SYMBOL) {
+    printf("ANALYZING LOOKUP %s\n", e->value.symbol);
     return lookup_env_var(environ, e->value.symbol);
 
   } else if (e->type == COMPOUND) {
     struct expr *first  = e->children[0];
 
     if (first->type == SYMBOL) {
+      // Definition
       if (strcmp2(first->value.symbol, "define") == 0) {
         char *key = e->children[1]->value.symbol;
         struct expr *value = eval(e->children[2], environ);
         return define_env_var(environ, key, value);
       }
+
+      // Begin expression
+      else if (strcmp2(first->value.symbol, "begin") == 0) {
+        printf("ANALYZING BEGIN %d\n", e->n_children);
+        struct expr *value;
+        for (int child_n = 1; child_n < e->n_children; child_n++) {
+          printf("ANALYZING %d\n", child_n);
+          value = eval(e->children[child_n], environ);
+        }
+        return value;
+      }
+      // Lambda
     }
+
+    // Application
 
   }
   return NULL;
@@ -361,9 +383,14 @@ void test_eval(char *code) {
 int main(int argc, char **argv) {
   //test_tokenize("(+ (* 1 2)\n(/ 3 4 (my-fun 5 6 \"hehe \")))");
 
-  test_eval("1");
-  test_eval("my-val");
-  test_eval("(define my-other-val \"aaa\")");
+  //test_eval("1");
+  //test_eval("my-val");
+  //test_eval("(define my-other-val \"aaa\")");
+  test_eval("(begin \
+    (define user-val 123) \
+    user-val \
+  )");
+  //test_eval("(begin (define user-val 123) user-val)");
 
   ///char *tokens[MAX_SUB_EXPR];
   ///int n_tokens = tokenize("(+ 1 (* 2 3) (/ 4 5))", tokens);
