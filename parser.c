@@ -1,35 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_SUB_EXPR 20
-
-enum expr_type {
-  COMPOUND,
-  NUMBER,
-  STRING,
-  SYMBOL,
-};
-
-const char *type_names[] = {
-  "COMPOUND",
-  "NUMBER",
-  "STRING",
-  "SYMBOL",
-};
-
-union expr_value {
-  double number;
-  char *string;
-  char *symbol;
-};
-
-struct expr {
-  enum expr_type type;
-  char *text;
-  union expr_value value;
-  struct expr *children[MAX_SUB_EXPR];
-  int n_children;
-};
+#define MAX_SUB_EXPR 32
+#define MAX_TOKENS 1024
 
 void strncpy2(char *from, char *to, int n_bytes) {
   for (int i = 0; i < n_bytes; i++) {
@@ -113,6 +86,31 @@ int isstring2(char *token) {
   return start != token && *(token-1) == '"';
 }
 
+/*
+  Parse
+*/
+enum parse_expr_type {
+  COMPOUND,
+  NUMBER,
+  STRING,
+  SYMBOL,
+};
+
+union parse_expr_value {
+  double number;
+  char *string;
+  char *symbol;
+};
+
+struct parse_expr {
+  enum parse_expr_type type;
+  char *text;
+  union parse_expr_value value;
+  struct parse_expr *children[MAX_SUB_EXPR];
+  int n_children;
+};
+
+
 void allocate_and_copy(char *tokens[], int token_index, char *start, int len) {
   tokens[token_index] = (char *) malloc(len + 1);
   strncpy2(start, tokens[token_index], len);
@@ -168,7 +166,7 @@ int tokenize(char *str, char *tokens[]) {
   return n;
 }
 
-int parse_literal(char *token, struct expr *e) {
+int parse_literal(char *token, struct parse_expr *e) {
   if (isnumber2(token)) {
     e->type = NUMBER;
     e->text = token;
@@ -188,7 +186,7 @@ int parse_literal(char *token, struct expr *e) {
   return 0;
 }
 
-int parse(char *tokens[], struct expr *e) {
+int parse(char *tokens[], struct parse_expr *e) {
   char **base = tokens;
   int step;
 
@@ -201,7 +199,7 @@ int parse(char *tokens[], struct expr *e) {
     tokens++;
 
     while (strcmp2(*tokens, ")") != 0) {
-      struct expr *child = (struct expr *) malloc(sizeof (struct expr));
+      struct parse_expr *child = (struct parse_expr *) malloc(sizeof (struct parse_expr));
       step = parse(tokens, child);
       e->children[e->n_children++] = child;
 
@@ -216,14 +214,284 @@ int parse(char *tokens[], struct expr *e) {
   } else {
 
     parse_literal(tokens[0], e);
-    //e->type = LITERAL;
-    //e->text = tokens[0];
     tokens++;
   }
   return tokens - base;
 }
 
-void print_expr(struct expr *e) {
+/*
+  Eval
+*/
+#define PROC_MAX_ARGS 32
+
+struct env_entry {
+  char *key;
+  struct eval_value *value;
+  struct env_entry *next;
+};
+
+struct env {
+  struct env_entry *entries;
+  struct env *parent;
+};
+
+void print_env(struct env *);
+
+struct eval_value;
+
+struct procedure {
+  enum {
+    PROC_USER_DEFINED,
+    PROC_PRIMITIVE,
+  } type;
+
+  // TODO: make an union for user-defined/primitive procedures
+
+  // For user-defined procedures only
+  int n_args;
+  char *arg_names[PROC_MAX_ARGS];
+  struct env *environ;
+  struct parse_expr *body;
+
+  // A pointer to a primitive procedure.
+  // A primitive procedure takes as argument an array of eval_value pointers
+  // and an int with the number of arguments. It returns a *eval_value.
+  struct eval_value* (*primitive)(struct eval_value **, int);
+};
+
+struct eval_value {
+  enum {
+    EV_NUMBER,
+    EV_STRING,
+    EV_SYMBOL,
+    EV_PROCEDURE,
+  } type;
+
+  union {
+    double number;
+    char *string;
+    char *symbol;
+    struct procedure *proc;
+  } value;
+};
+
+void print_eval_value(struct eval_value *e) {
+  if (e->type == EV_NUMBER) {
+    printf("NUMBER %.6f", e->value.number);
+  } else if (e->type == EV_STRING) {
+    printf("STRING %s", e->value.string);
+  } else if (e->type == EV_SYMBOL) {
+    printf("SYMBOL %s", e->value.symbol);
+  } else if (e->type == EV_PROCEDURE) {
+    if (e->value.proc->type == PROC_PRIMITIVE) {
+      printf("PRIMITIVE PROCEDURE");
+    } else if (e->value.proc->type == PROC_USER_DEFINED) {
+      printf("USER DEFINED PROCEDURE WITH ARGS ");
+      for (int i; i < e->value.proc->n_args; i++) {
+        printf("%s, ", e->value.proc->arg_names[i]);
+      }
+    } else {
+      printf("UNKNOWN PROCEDURE TYPE");
+    }
+  } else {
+    printf("UNKNOWN TYPE");
+  }
+  printf("\n");
+}
+
+struct eval_value *make_procedure(struct parse_expr *e, struct env *environ) {
+  struct eval_value *value = (struct eval_value*) malloc(sizeof (struct eval_value));
+  struct parse_expr *child_exp;
+
+  struct procedure *proc = (struct procedure *) malloc(sizeof (struct procedure));
+
+  proc->type = PROC_USER_DEFINED;
+  proc->environ = environ;
+  proc->n_args = 0;
+  proc->body = e->children[2];
+
+  value->type = EV_PROCEDURE;
+  value->value.proc = proc;
+
+
+  child_exp = e->children[1];
+  for (int child_n = 0; child_n < child_exp->n_children; child_n++) {
+    proc->arg_names[proc->n_args++] = child_exp->children[child_n]->value.string;
+  }
+
+  return value;
+}
+
+struct eval_value *lookup_env_var(struct env *environ, char *key) {
+  if (environ == NULL) {
+    fprintf(stderr, "Variable '%s' is not defined\n", key);
+    exit(1);
+  }
+
+  for (struct env_entry *p = environ->entries; p; p = p->next) {
+    if (strcmp2(p->key, key) == 0) {
+      return p->value;
+    }
+  }
+
+  return lookup_env_var(environ->parent, key);
+}
+
+struct eval_value *define_env_var(struct env *environ, char *key, struct eval_value *value) {
+  struct env_entry *new_entry = malloc(sizeof (struct env_entry));
+  new_entry->key = key;
+  new_entry->value = value;
+  new_entry->next = environ->entries;
+  environ->entries = new_entry;
+
+  return value;
+}
+
+// TODO: probably intern these babies to save memory
+struct eval_value *eval_literal(struct parse_expr *e) {
+    struct eval_value *v = (struct eval_value *) malloc(sizeof (struct eval_value));
+
+    if (e->type == NUMBER) {
+      v->type = EV_NUMBER;
+      v->value.number = e->value.number;
+    } else if (e->type == STRING) {
+      v->type = EV_STRING;
+      v->value.string = e->value.string;
+    } else {
+      fprintf(stderr, "Invalid literal type");
+      exit(1);
+    }
+    return v;
+}
+
+struct eval_value *eval(struct parse_expr *, struct env *);
+
+struct eval_value *eval_application(struct parse_expr *e, struct env *environ) {
+  struct eval_value *proc_value = eval(e->children[0], environ);
+
+  int n_args = e->n_children - 1;
+  struct eval_value *args_values[n_args];
+
+  struct procedure *proc = proc_value->value.proc;
+
+  //printf("EVALUATED PROC ");
+  //print_eval_value(proc_value);
+  for (int child_n = 1; child_n < e->n_children; child_n++) {
+    args_values[child_n - 1] = eval(e->children[child_n], environ);
+    //printf("\nEVALUATED ARG: ");
+    //print_eval_value(args_values[child_n-1]);
+  }
+
+  if (proc->type == PROC_PRIMITIVE) {
+    return proc->primitive(args_values, n_args);
+
+  } else if (proc->type == PROC_USER_DEFINED) {
+
+    if(n_args != proc->n_args) {
+      fprintf(stderr, "Wrong number of arguments given to procedure\n");
+      exit(1);
+    }
+
+    struct env *new_env = malloc(sizeof (struct env));
+    new_env->parent = proc->environ;
+
+    // Extend new env with procedure arguments names/values
+    for (int i = 0; i < n_args; i++) {
+      define_env_var(new_env, proc->arg_names[i], args_values[i]);
+    }
+    return eval(proc->body, new_env);
+
+  } else {
+    fprintf(stderr, "Invalid procedure type\n");
+    exit(1);
+  }
+}
+
+struct eval_value *eval(struct parse_expr *e, struct env *environ) {
+  //printf("EVAL: ");
+  //print_parse_expr(e);
+
+  if (e->type == NUMBER || e->type == STRING) {
+    return eval_literal(e);
+
+  } else if (e->type == SYMBOL) {
+    return lookup_env_var(environ, e->value.symbol);
+
+  } else if (e->type == COMPOUND) {
+    struct parse_expr *first  = e->children[0];
+
+    if (first->type == SYMBOL) {
+      // Definition
+      if (strcmp2(first->value.symbol, "define") == 0) {
+        char *key = e->children[1]->value.symbol;
+        struct eval_value *value = eval(e->children[2], environ);
+        return define_env_var(environ, key, value);
+      }
+
+      // Begin expression
+      else if (strcmp2(first->value.symbol, "begin") == 0) {
+        struct eval_value *value;
+        for (int child_n = 1; child_n < e->n_children; child_n++) {
+          value = eval(e->children[child_n], environ);
+        }
+        return value;
+      }
+
+      // Lambda
+      else if (strcmp2(first->value.symbol, "lambda") == 0) {
+        return make_procedure(e, environ);
+      }
+
+      // Application
+      else {
+        return eval_application(e, environ);
+      }
+    }
+  }
+  return NULL;
+}
+
+struct eval_value *primitive_sum(struct eval_value *args[], int n_args) {
+  struct eval_value *result = (struct eval_value *) malloc(sizeof (struct eval_value));
+  double sum = 0.;
+  while (n_args > 0) {
+    sum += args[--n_args]->value.number;
+  }
+
+  result->type = EV_NUMBER;
+  result->value.number = sum;
+  return result;
+}
+
+struct env *make_root_env() {
+  struct env *environ = (struct env *) malloc(sizeof (struct env));
+  environ->entries = NULL;
+
+  // Install primitive procedures
+  struct eval_value *value = (struct eval_value *) malloc(sizeof (struct eval_value));
+  struct procedure *proc = malloc(sizeof (struct procedure));
+  proc->type = PROC_PRIMITIVE;
+  proc->primitive = primitive_sum;
+  value->type = EV_PROCEDURE;
+  value->value.proc = proc;
+  define_env_var(environ, "+", value);
+
+  return environ;
+
+}
+
+/*
+  Debug
+*/
+
+void print_env(struct env *environ) {
+  for (struct env_entry *p = environ->entries; p; p = p->next) {
+    printf("%s => ", p->key);
+    print_eval_value(p->value);
+  }
+}
+
+void print_parse_expr(struct parse_expr *e) {
   if (e->type == NUMBER) {
     printf("NUMBER %.6f", e->value.number);
   } else if (e->type == STRING) {
@@ -238,7 +506,7 @@ void print_expr(struct expr *e) {
   printf("\n");
 }
 
-void print_ast(struct expr *root, int indent) {
+void print_ast(struct parse_expr *root, int indent) {
   for (int j=0; j < indent; j++)
     printf("\t");
 
@@ -248,174 +516,43 @@ void print_ast(struct expr *root, int indent) {
       print_ast(root->children[i], indent+1);
     }
   } else {
-    print_expr(root);
+    print_parse_expr(root);
   }
 }
 
-void test_tokenize(char *code) {
-  char *tokens[MAX_SUB_EXPR];
-  int n_tokens = tokenize(code, tokens);
 
-  printf("Will tokenize %s\n", code);
-  printf("Tokenize found %d tokens\n", n_tokens);
+void debug_eval(char *code) {
+  char *tokens[MAX_TOKENS];
+  int n_tokens;
+  struct env *environ = make_root_env();
+  struct parse_expr parsed_code;
+  struct eval_value *eval_result;
+
+  n_tokens = tokenize(code, tokens);
+
+  printf("TOKENS (%d)\n==========\n", n_tokens);
 
   for (int i = 0; i < n_tokens; i++) {
     printf("%s, ", tokens[i]);
   }
-  printf ("\n");
+  printf ("\n\n");
 
-  struct expr root;
-  parse(tokens, &root);
-
-  print_ast(&root, 0);
-}
-
-struct env_entry {
-  char *key;
-  struct expr *value;
-  struct env_entry *next;
-};
-
-struct env {
-  struct env_entry *entries;
-  struct env *parent;
-};
-
-struct expr *lookup_env_var(struct env *environ, char *key) {
-  for (struct env_entry *p = environ->entries; p != NULL; p++) {
-    if (strcmp2(p->key, key) == 0) {
-      return p->value;
-    }
-  }
-  return NULL;
-}
-
-struct expr *define_env_var(struct env *environ, char *key, struct expr *value) {
-  struct env_entry *new_entry = malloc(sizeof (struct env_entry));
-  new_entry->key = key;
-  new_entry->value = value;
-  new_entry->next = environ->entries;
-  environ->entries = new_entry;
-  return value;
-}
-
-struct expr *eval(struct expr *e, struct env *environ) {
-  printf("EVAL: ");
-  print_expr(e);
-
-  if (e->type == NUMBER || e->type == STRING) {
-    return e;
-
-  } else if (e->type == SYMBOL) {
-    printf("ANALYZING LOOKUP %s\n", e->value.symbol);
-    return lookup_env_var(environ, e->value.symbol);
-
-  } else if (e->type == COMPOUND) {
-    struct expr *first  = e->children[0];
-
-    if (first->type == SYMBOL) {
-      // Definition
-      if (strcmp2(first->value.symbol, "define") == 0) {
-        char *key = e->children[1]->value.symbol;
-        struct expr *value = eval(e->children[2], environ);
-        return define_env_var(environ, key, value);
-      }
-
-      // Begin expression
-      else if (strcmp2(first->value.symbol, "begin") == 0) {
-        printf("ANALYZING BEGIN %d\n", e->n_children);
-        struct expr *value;
-        for (int child_n = 1; child_n < e->n_children; child_n++) {
-          printf("ANALYZING %d\n", child_n);
-          value = eval(e->children[child_n], environ);
-        }
-        return value;
-      }
-      // Lambda
-    }
-
-    // Application
-
-  }
-  return NULL;
-}
-
-void print_env(struct env *environ) {
-  printf("\nENV:\n====\n");
-  for (struct env_entry *p = environ->entries; p; p = p->next) {
-    printf("%s => ", p->key);
-    print_expr(p->value);
-  }
-}
-
-void test_eval(char *code) {
-  char *tokens[MAX_SUB_EXPR];
-  tokenize(code, tokens);
-
-  struct env environ;
-  struct expr e;
-  e.type = NUMBER;
-  e.value.number = 13.;
-  struct env_entry entry;
-  entry.key = "my-val";
-  entry.value = &e;
-  entry.next = NULL;
-  environ.parent = NULL;
-  environ.entries = &entry;
-
-  struct expr root;
-  parse(tokens, &root);
+  parse(tokens, &parsed_code);
 
   printf("AST:\n====\n");
-  print_ast(&root, 0);
+  print_ast(&parsed_code, 0);
 
-  struct expr *res;
-  res = eval(&root, &environ);
+  eval_result = eval(&parsed_code, environ);
 
   printf("\nRESULT:\n=======\n");
-  print_expr(res);
+  print_eval_value(eval_result);
 
-  print_env(&environ);
+  printf("\nENV:\n====\n");
+  print_env(environ);
 
   printf("\n");
 }
 
 int main(int argc, char **argv) {
-  //test_tokenize("(+ (* 1 2)\n(/ 3 4 (my-fun 5 6 \"hehe \")))");
-
-  //test_eval("1");
-  //test_eval("my-val");
-  //test_eval("(define my-other-val \"aaa\")");
-  test_eval("(begin \
-    (define user-val 123) \
-    user-val \
-  )");
-  //test_eval("(begin (define user-val 123) user-val)");
-
-  ///char *tokens[MAX_SUB_EXPR];
-  ///int n_tokens = tokenize("(+ 1 (* 2 3) (/ 4 5))", tokens);
-  //int n_tokens = tokenize("1", tokens);
-
-  //eval(
-
-  //struct expr root;
-  //parse(tokens, &root);
-
-  //print_ast(&root, 0);
-
-  ////printf("strcmp2: %d\n", strcmp2("abcd", "abce"));
-
-  //test_tokenize("");
-  //test_tokenize("2");
-  //test_tokenize("(+ 1 2)");
-  //test_tokenize("    ( +      \t 1 2 )    \t  ");
-  //test_tokenize("(+ \"aa a\")");
-  //test_tokenize("(+ 1 2)\n(+ 2 3)");
-  //struct vresult
-  //printf("%d\n", isnumber2("23.0123"));
-  //printf("%d\n", issymbol2("-aaa"));
-  //printf("%d\n", issymbol2("aa12 3a"));
-  //printf("%d\n", isstring2("\"aa'12 3a\""));
+  debug_eval("(begin (define my-fun (lambda (a) (+ a 1))) (my-fun 1))");
 }
-
-//(+ (+ 1 2) (* 4 5))
