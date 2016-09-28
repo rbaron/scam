@@ -17,7 +17,7 @@ const char *type_names[] = {
   "SYMBOL",
 };
 
-union values {
+union expr_value {
   double number;
   char *string;
   char *symbol;
@@ -25,8 +25,8 @@ union values {
 
 struct expr {
   enum expr_type type;
-  char *human_type;
   char *text;
+  union expr_value value;
   struct expr *children[MAX_SUB_EXPR];
   int n_children;
 };
@@ -173,12 +173,15 @@ int parse_literal(char *token, struct expr *e) {
   if (isnumber2(token)) {
     e->type = NUMBER;
     e->text = token;
+    e->value.number = atof(token);
   } else if (isstring2(token)) {
     e->type = STRING;
     e->text = token;
+    e->value.string = token;
   } else if (issymbol2(token)) {
     e->type = SYMBOL;
     e->text = token;
+    e->value.symbol = token;
   } else {
     fprintf(stderr, "Unknown literal: %s\n", token);
     exit(1);
@@ -221,6 +224,17 @@ int parse(char *tokens[], struct expr *e) {
   return tokens - base;
 }
 
+void print_expr(struct expr *e) {
+  if (e->type == NUMBER) {
+    printf("NUMBER %.6f", e->value.number);
+  } else if (e->type == STRING) {
+    printf("STRING %s", e->value.string);
+  } else if (e->type == SYMBOL) {
+    printf("SYMBOL %s", e->value.symbol);
+  }
+  printf("\n");
+}
+
 void print_ast(struct expr *root, int indent) {
   for (int j=0; j < indent; j++)
     printf("\t");
@@ -231,8 +245,7 @@ void print_ast(struct expr *root, int indent) {
       print_ast(root->children[i], indent+1);
     }
   } else {
-    printf("%s ", type_names[root->type]);
-    printf("%s\n", root->text);
+    print_expr(root);
   }
 }
 
@@ -254,14 +267,111 @@ void test_tokenize(char *code) {
   print_ast(&root, 0);
 }
 
+struct env_entry {
+  char *key;
+  struct expr *value;
+  struct env_entry *next;
+};
+
+struct env {
+  struct env_entry *entries;
+  struct env *parent;
+};
+
+struct expr *lookup_env_var(struct env *environ, char *key) {
+  for (struct env_entry *p = environ->entries; p != NULL; p++) {
+    if (strcmp2(p->key, key) == 0) {
+      return p->value;
+    }
+  }
+  return NULL;
+}
+
+struct expr *define_env_var(struct env *environ, char *key, struct expr *value) {
+  struct env_entry *new_entry = malloc(sizeof (struct env_entry));
+  new_entry->key = key;
+  new_entry->value = value;
+  new_entry->next = environ->entries;
+  environ->entries = new_entry;
+  return value;
+}
+
+struct expr *eval(struct expr *e, struct env *environ) {
+  if (e->type == NUMBER || e->type == STRING) {
+    return e;
+
+  } else if (e->type == SYMBOL) {
+    return lookup_env_var(environ, e->value.symbol);
+
+  } else if (e->type == COMPOUND) {
+    struct expr *first  = e->children[0];
+
+    if (first->type == SYMBOL) {
+      if (strcmp2(first->value.symbol, "define") == 0) {
+        char *key = e->children[1]->value.symbol;
+        struct expr *value = eval(e->children[2], environ);
+        return define_env_var(environ, key, value);
+      }
+    }
+
+  }
+  return NULL;
+}
+
+void print_env(struct env *environ) {
+  printf("\nENV:\n====\n");
+  for (struct env_entry *p = environ->entries; p; p = p->next) {
+    printf("%s => ", p->key);
+    print_expr(p->value);
+  }
+}
+
+void test_eval(char *code) {
+  char *tokens[MAX_SUB_EXPR];
+  tokenize(code, tokens);
+
+  struct env environ;
+  struct expr e;
+  e.type = NUMBER;
+  e.value.number = 13.;
+  struct env_entry entry;
+  entry.key = "my-val";
+  entry.value = &e;
+  entry.next = NULL;
+  environ.parent = NULL;
+  environ.entries = &entry;
+
+  struct expr root;
+  parse(tokens, &root);
+
+  printf("AST:\n====\n");
+  print_ast(&root, 0);
+
+  struct expr *res;
+  res = eval(&root, &environ);
+
+  printf("\nRESULT:\n=======\n");
+  print_expr(res);
+
+  print_env(&environ);
+
+  printf("\n");
+}
+
 int main(int argc, char **argv) {
-  //char *tokens[MAX_SUB_EXPR];
-  //int n_tokens = tokenize("(+ 1 (* 2 3) (/ 4 5))", tokens);
+  //test_tokenize("(+ (* 1 2)\n(/ 3 4 (my-fun 5 6 \"hehe \")))");
+
+  test_eval("1");
+  test_eval("my-val");
+  test_eval("(define my-other-val \"aaa\")");
+
+  ///char *tokens[MAX_SUB_EXPR];
+  ///int n_tokens = tokenize("(+ 1 (* 2 3) (/ 4 5))", tokens);
   //int n_tokens = tokenize("1", tokens);
 
+  //eval(
+
   //struct expr root;
-  ////root.type = COMPOUND;
-  ////root.n_children = 0;
   //parse(tokens, &root);
 
   //print_ast(&root, 0);
@@ -274,7 +384,6 @@ int main(int argc, char **argv) {
   //test_tokenize("    ( +      \t 1 2 )    \t  ");
   //test_tokenize("(+ \"aa a\")");
   //test_tokenize("(+ 1 2)\n(+ 2 3)");
-  test_tokenize("(+ (* 1 2)\n(/ 3 4 (my-fun 5 6 \"hehe \")))");
   //struct vresult
   //printf("%d\n", isnumber2("23.0123"));
   //printf("%d\n", issymbol2("-aaa"));
