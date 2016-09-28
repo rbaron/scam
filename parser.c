@@ -366,6 +366,12 @@ struct eval_value *eval_literal(struct parse_expr *e) {
 
 struct eval_value *eval(struct parse_expr *, struct env *);
 
+struct eval_value *eval_if(struct parse_expr *e, struct env *environ) {
+  fprintf(stderr, "if expression is not implemented yet\n");
+  exit(1);
+  return NULL;
+}
+
 struct eval_value *eval_application(struct parse_expr *e, struct env *environ) {
   struct eval_value *proc_value = eval(e->children[0], environ);
 
@@ -374,12 +380,8 @@ struct eval_value *eval_application(struct parse_expr *e, struct env *environ) {
 
   struct procedure *proc = proc_value->value.proc;
 
-  //printf("EVALUATED PROC ");
-  //print_eval_value(proc_value);
   for (int child_n = 1; child_n < e->n_children; child_n++) {
     args_values[child_n - 1] = eval(e->children[child_n], environ);
-    //printf("\nEVALUATED ARG: ");
-    //print_eval_value(args_values[child_n-1]);
   }
 
   if (proc->type == PROC_PRIMITIVE) {
@@ -408,9 +410,6 @@ struct eval_value *eval_application(struct parse_expr *e, struct env *environ) {
 }
 
 struct eval_value *eval(struct parse_expr *e, struct env *environ) {
-  //printf("EVAL: ");
-  //print_parse_expr(e);
-
   if (e->type == NUMBER || e->type == STRING) {
     return eval_literal(e);
 
@@ -421,14 +420,14 @@ struct eval_value *eval(struct parse_expr *e, struct env *environ) {
     struct parse_expr *first  = e->children[0];
 
     if (first->type == SYMBOL) {
-      // Definition
+      // define
       if (strcmp2(first->value.symbol, "define") == 0) {
         char *key = e->children[1]->value.symbol;
         struct eval_value *value = eval(e->children[2], environ);
         return define_env_var(environ, key, value);
       }
 
-      // Begin expression
+      // begin
       else if (strcmp2(first->value.symbol, "begin") == 0) {
         struct eval_value *value;
         for (int child_n = 1; child_n < e->n_children; child_n++) {
@@ -437,12 +436,17 @@ struct eval_value *eval(struct parse_expr *e, struct env *environ) {
         return value;
       }
 
-      // Lambda
+      // if-else
+      else if (strcmp2(first->value.symbol, "if") == 0) {
+        return eval_if(e, environ);
+      }
+
+      // lambda
       else if (strcmp2(first->value.symbol, "lambda") == 0) {
         return make_procedure(e, environ);
       }
 
-      // Application
+      // Procedure application
       else {
         return eval_application(e, environ);
       }
@@ -508,7 +512,7 @@ void print_parse_expr(struct parse_expr *e) {
 
 void print_ast(struct parse_expr *root, int indent) {
   for (int j=0; j < indent; j++)
-    printf("\t");
+    printf("    ");
 
   if (root->type == COMPOUND) {
     printf("COMPOUND\n");
@@ -519,7 +523,6 @@ void print_ast(struct parse_expr *root, int indent) {
     print_parse_expr(root);
   }
 }
-
 
 void debug_eval(char *code) {
   char *tokens[MAX_TOKENS];
