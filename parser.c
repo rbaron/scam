@@ -225,6 +225,7 @@ int parse(char *tokens[], struct parse_expr *e) {
 /*
   Eval
 */
+
 #define PROC_MAX_ARGS 32
 
 struct env_entry {
@@ -280,6 +281,8 @@ struct eval_value {
   } value;
 };
 
+struct eval_value *eval(struct parse_expr *, struct env *);
+
 void print_eval_value(struct eval_value *e) {
   if (e->type == EV_BOOLEAN) {
     printf("BOOLEAN %d", e->value.boolean);
@@ -320,7 +323,6 @@ struct eval_value *make_procedure(struct parse_expr *e, struct env *environ) {
   value->type = EV_PROCEDURE;
   value->value.proc = proc;
 
-
   child_exp = e->children[1];
   for (int child_n = 0; child_n < child_exp->n_children; child_n++) {
     proc->arg_names[proc->n_args++] = child_exp->children[child_n]->value.string;
@@ -354,7 +356,7 @@ struct eval_value *define_env_var(struct env *environ, char *key, struct eval_va
   return value;
 }
 
-// TODO: probably intern these babies to save memory
+// TODO: probably intern (some of?) these babies to save memory
 struct eval_value *eval_literal(struct parse_expr *e) {
   struct eval_value *v = (struct eval_value *) malloc(sizeof (struct eval_value));
 
@@ -371,12 +373,22 @@ struct eval_value *eval_literal(struct parse_expr *e) {
   return v;
 }
 
-struct eval_value *eval(struct parse_expr *, struct env *);
-
 struct eval_value *eval_if(struct parse_expr *e, struct env *environ) {
-  fprintf(stderr, "if expression is not implemented yet\n");
-  exit(1);
-  return NULL;
+  if (e->n_children != 4) {
+    fprintf(stderr, "Malformed if expression\n");
+    exit(1);
+  }
+
+  struct eval_value *predicate = eval(e->children[1], environ);
+
+  // Evaluate alternative if and only if the predicate evaluates to false
+  if (predicate->type == EV_BOOLEAN && predicate->value.boolean == 0) {
+    return eval(e->children[3], environ);
+
+  // Otherwise evaluates the consequent
+  } else {
+    return eval(e->children[2], environ);
+  }
 }
 
 struct eval_value *eval_application(struct parse_expr *e, struct env *environ) {
@@ -605,5 +617,7 @@ int main(int argc, char **argv) {
   //debug_eval("(begin (define my-fun (lambda (a) (+ a 1))) (my-fun 1))");
   //debug_eval("(begin (if 0 1 2))");
   //debug_eval("(/ 1 2 5)");
-  debug_eval("false");
+  debug_eval("(if true 1 2)");
+  debug_eval("(if 1 1 2)");
+  debug_eval("(if false 1 2)");
 }
