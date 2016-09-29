@@ -31,6 +31,7 @@ int isspace2(char c) {
 
 int isnumber2(char *token) {
   int n_dots = 0;
+  int has_sign = 0;
   char *start = token;
 
   for (; *token; token++) {
@@ -42,6 +43,7 @@ int isnumber2(char *token) {
 
       // Sign only in the beginning
       } else if (*token == '-' && token == start) {
+        has_sign = 1;
         continue;
 
       } else {
@@ -50,8 +52,8 @@ int isnumber2(char *token) {
     }
   }
 
-  // empty string is not a number
-  return start != token;
+  // Empty strings are not numbers
+  return has_sign ? start != (token - 1) : start != token;
 }
 
 int issymbol2(char *token) {
@@ -110,12 +112,13 @@ struct parse_expr {
   int n_children;
 };
 
-
 void allocate_and_copy(char *tokens[], int token_index, char *start, int len) {
   tokens[token_index] = (char *) malloc(len + 1);
   strncpy2(start, tokens[token_index], len);
 }
 
+// TODO: read from stdin instead of string. It should be easier, since we don't
+// have to keep track of the number of chars consumed by recursive calls.
 int tokenize(char *str, char *tokens[]) {
   int n = 0;
   int inside_string = 0;
@@ -158,7 +161,7 @@ int tokenize(char *str, char *tokens[]) {
     }
   }
 
-  // EOF was read. Maybe flush token being currently parsed
+  // End of string was read. Maybe flush token being currently parsed
   if (start != str) {
     allocate_and_copy(tokens, n++, start, str - start);
   }
@@ -261,22 +264,26 @@ struct procedure {
 
 struct eval_value {
   enum {
+    EV_BOOLEAN,
     EV_NUMBER,
+    EV_PROCEDURE,
     EV_STRING,
     EV_SYMBOL,
-    EV_PROCEDURE,
   } type;
 
   union {
+    int boolean;
     double number;
+    struct procedure *proc;
     char *string;
     char *symbol;
-    struct procedure *proc;
   } value;
 };
 
 void print_eval_value(struct eval_value *e) {
-  if (e->type == EV_NUMBER) {
+  if (e->type == EV_BOOLEAN) {
+    printf("BOOLEAN %d", e->value.boolean);
+  } else if (e->type == EV_NUMBER) {
     printf("NUMBER %.6f", e->value.number);
   } else if (e->type == EV_STRING) {
     printf("STRING %s", e->value.string);
@@ -349,19 +356,19 @@ struct eval_value *define_env_var(struct env *environ, char *key, struct eval_va
 
 // TODO: probably intern these babies to save memory
 struct eval_value *eval_literal(struct parse_expr *e) {
-    struct eval_value *v = (struct eval_value *) malloc(sizeof (struct eval_value));
+  struct eval_value *v = (struct eval_value *) malloc(sizeof (struct eval_value));
 
-    if (e->type == NUMBER) {
-      v->type = EV_NUMBER;
-      v->value.number = e->value.number;
-    } else if (e->type == STRING) {
-      v->type = EV_STRING;
-      v->value.string = e->value.string;
-    } else {
-      fprintf(stderr, "Invalid literal type");
-      exit(1);
-    }
-    return v;
+  if (e->type == NUMBER) {
+    v->type = EV_NUMBER;
+    v->value.number = e->value.number;
+  } else if (e->type == STRING) {
+    v->type = EV_STRING;
+    v->value.string = e->value.string;
+  } else {
+    fprintf(stderr, "Invalid literal type");
+    exit(1);
+  }
+  return v;
 }
 
 struct eval_value *eval(struct parse_expr *, struct env *);
@@ -452,33 +459,71 @@ struct eval_value *eval(struct parse_expr *e, struct env *environ) {
       }
     }
   }
-  return NULL;
+
+  fprintf(stderr, "Invalid expression type");
+  exit(1);
 }
 
-struct eval_value *primitive_sum(struct eval_value *args[], int n_args) {
-  struct eval_value *result = (struct eval_value *) malloc(sizeof (struct eval_value));
-  double sum = 0.;
-  while (n_args > 0) {
-    sum += args[--n_args]->value.number;
+/*
+ Primitive procedures
+*/
+
+// Some primitive procedures look ridiculously alike -- initialize an accumulator
+// and iterate over arguments changing that accumulator --, so I tried and made
+// a macro that generates the repetitive code.
+
+#define make_primitive_accumulator_proc(name, operator_symbol) \
+  struct eval_value *primitive_  ## name(struct eval_value *args[], int n_args) { \
+    struct eval_value *result = (struct eval_value *) malloc(sizeof (struct eval_value)); \
+    double sum = args[0]->value.number; \
+    for (int i = 1; i < n_args; i++) { \
+      sum operator_symbol ## = args[i]->value.number; \
+    } \
+    result->type = EV_NUMBER; \
+    result->value.number = sum; \
+    return result; \
   }
 
-  result->type = EV_NUMBER;
-  result->value.number = sum;
-  return result;
+make_primitive_accumulator_proc(sum, +);
+make_primitive_accumulator_proc(sub, -);
+make_primitive_accumulator_proc(mul, *);
+make_primitive_accumulator_proc(div, /);
+
+void define_env_primitive_proc(
+  struct env *environ,
+  char *key,
+  struct eval_value* (*f)(struct eval_value **, int)) {
+
+  struct eval_value *value = (struct eval_value *) malloc(sizeof (struct eval_value));
+  struct procedure *proc = malloc(sizeof (struct procedure));
+  proc->type = PROC_PRIMITIVE;
+  proc->primitive = f;
+  value->type = EV_PROCEDURE;
+  value->value.proc = proc;
+  define_env_var(environ, key, value);
 }
 
 struct env *make_root_env() {
   struct env *environ = (struct env *) malloc(sizeof (struct env));
   environ->entries = NULL;
 
+  // Install booleans
+  struct eval_value *f = (struct eval_value *) malloc(sizeof (struct eval_value));
+  f->type = EV_BOOLEAN;
+  f->value.boolean = 0;
+
+  struct eval_value *t = (struct eval_value *) malloc(sizeof (struct eval_value));
+  t->type = EV_BOOLEAN;
+  t->value.boolean = 1;
+
+  define_env_var(environ, "false", f);
+  define_env_var(environ, "true", t);
+
   // Install primitive procedures
-  struct eval_value *value = (struct eval_value *) malloc(sizeof (struct eval_value));
-  struct procedure *proc = malloc(sizeof (struct procedure));
-  proc->type = PROC_PRIMITIVE;
-  proc->primitive = primitive_sum;
-  value->type = EV_PROCEDURE;
-  value->value.proc = proc;
-  define_env_var(environ, "+", value);
+  define_env_primitive_proc(environ, "+", primitive_sum);
+  define_env_primitive_proc(environ, "-", primitive_sub);
+  define_env_primitive_proc(environ, "*", primitive_mul);
+  define_env_primitive_proc(environ, "/", primitive_div);
 
   return environ;
 
@@ -557,5 +602,8 @@ void debug_eval(char *code) {
 }
 
 int main(int argc, char **argv) {
-  debug_eval("(begin (define my-fun (lambda (a) (+ a 1))) (my-fun 1))");
+  //debug_eval("(begin (define my-fun (lambda (a) (+ a 1))) (my-fun 1))");
+  //debug_eval("(begin (if 0 1 2))");
+  //debug_eval("(/ 1 2 5)");
+  debug_eval("false");
 }
