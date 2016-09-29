@@ -4,6 +4,14 @@
 #define MAX_SUB_EXPR 32
 #define MAX_TOKENS 1024
 
+double fabs2(double n) {
+  if (n >= 0.) {
+    return n;
+  } else {
+    return -n;
+  }
+};
+
 void strncpy2(char *from, char *to, int n_bytes) {
   for (int i = 0; i < n_bytes; i++) {
     to[i] = from[i];
@@ -501,6 +509,70 @@ make_primitive_accumulator_proc(sub, -);
 make_primitive_accumulator_proc(mul, *);
 make_primitive_accumulator_proc(div, /);
 
+
+// TODO: intern boolean values
+#define make_primitive_predicate_proc(name, cmp_fn) \
+  struct eval_value *primitive_ ## name(struct eval_value *args[], int n_args) { \
+    if (n_args != 2) { \
+      fprintf(stderr, "Predicate procedure accepts only 2 arguments\n"); \
+      exit(1); \
+    } else if (args[0]->type != EV_NUMBER || args[1]->type != EV_NUMBER) { \
+      fprintf(stderr, "Predicate only accepts numbers as arguments\n"); \
+      exit(1); \
+    } else { \
+      struct eval_value *result = malloc(sizeof (struct eval_value)); \
+      result->type = EV_BOOLEAN; \
+      result->value.boolean = cmp_fn(args[0]->value.number, args[1]->value.number); \
+      return result; \
+    } \
+  } \
+
+int is_equal(double a, double b) {
+  return fabs2(a - b) < 1e-6;
+}
+int is_greater(double a, double b) {
+  return a > b;
+}
+int is_less(double a, double b) {
+  return a < b;
+}
+
+make_primitive_predicate_proc(eql, is_equal);
+make_primitive_predicate_proc(gtr, is_greater);
+make_primitive_predicate_proc(lss, is_less);
+
+//struct eval_value *primitive_eql(struct eval_value *args[], int n_args) {
+//  if (n_args != 2) {
+//    fprintf(stderr, "Predicate procedure accepts only 2 arguments\n");
+//    exit(1);
+//  } else if (args[0]->type != EV_NUMBER || args[1]->type != EV_NUMBER) {
+//    fprintf(stderr, "Predicate only accepts numbers as arguments\n");
+//    exit(1);
+//  } else {
+//    // TODO: intern boolean values
+//    struct eval_value *result = malloc(sizeof (struct eval_value));
+//    result->type = EV_BOOLEAN;
+//    result->value.boolean = fabs2(args[0]->value.number - args[1]->value.number) < 1e-6;
+//    return result;
+//  }
+//};
+
+//struct eval_value *primitive_gtr(struct eval_value *args[], int n_args) {
+//  if (n_args != 2) {
+//    fprintf(stderr, "Predicate procedure accepts only 2 arguments\n");
+//    exit(1);
+//  } else if (args[0]->type != EV_NUMBER || args[1]->type != EV_NUMBER) {
+//    fprintf(stderr, "Predicate only accepts numbers as arguments\n");
+//    exit(1);
+//  } else {
+//    // TODO: intern boolean values
+//    struct eval_value *result = malloc(sizeof (struct eval_value));
+//    result->type = EV_BOOLEAN;
+//    result->value.boolean = args[0]->value.number > args[1]->value.number;
+//    return result;
+//  }
+//};
+
 void define_env_primitive_proc(
   struct env *environ,
   char *key,
@@ -536,6 +608,9 @@ struct env *make_root_env() {
   define_env_primitive_proc(environ, "-", primitive_sub);
   define_env_primitive_proc(environ, "*", primitive_mul);
   define_env_primitive_proc(environ, "/", primitive_div);
+  define_env_primitive_proc(environ, "==", primitive_eql);
+  define_env_primitive_proc(environ, ">", primitive_gtr);
+  define_env_primitive_proc(environ, "<", primitive_lss);
 
   return environ;
 
@@ -617,7 +692,8 @@ int main(int argc, char **argv) {
   //debug_eval("(begin (define my-fun (lambda (a) (+ a 1))) (my-fun 1))");
   //debug_eval("(begin (if 0 1 2))");
   //debug_eval("(/ 1 2 5)");
-  debug_eval("(if true 1 2)");
-  debug_eval("(if 1 1 2)");
-  debug_eval("(if false 1 2)");
+  //debug_eval("(if true 1 2)");
+  //debug_eval("(if 1 1 2)");
+  //debug_eval("(if false 1 2)");
+  debug_eval("(< 1 3)");
 }
