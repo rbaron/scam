@@ -689,11 +689,13 @@ void debug_eval(char *code) {
 }
 
 int main(int argc, char **argv) {
-  //debug_eval("(begin (define my-fun (lambda (a) (+ a 1))) (my-fun 1))");
-  //debug_eval("(begin (if 0 1 2))");
-  //debug_eval("(/ 1 2 5)");
-  //debug_eval("(if true 1 2)");
-  //debug_eval("(if 1 1 2)");
-  //debug_eval("(if false 1 2)");
-  debug_eval("(< 1 3)");
+  debug_eval("                       \
+   (begin                            \
+    (define factorial (lambda (n)    \
+      (if (== n 1)                   \
+        1                            \
+        (* n (factorial (- n 1)))))) \
+    (factorial 6))");
+
+  // => 720.
 }
