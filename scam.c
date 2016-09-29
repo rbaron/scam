@@ -1,8 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define MAX_SUB_EXPR 32
 #define MAX_TOKENS 1024
+#define MAX_SUB_EXPR 32
+#define MAX_PROGRAM_SIZE 2048
 
 double fabs2(double n) {
   if (n >= 0.) {
@@ -125,8 +126,6 @@ void allocate_and_copy(char *tokens[], int token_index, char *start, int len) {
   strncpy2(start, tokens[token_index], len);
 }
 
-// TODO: read from stdin instead of string. It should be easier, since we don't
-// have to keep track of the number of chars consumed by recursive calls.
 int tokenize(char *str, char *tokens[]) {
   int n = 0;
   int inside_string = 0;
@@ -305,7 +304,7 @@ void print_eval_value(struct eval_value *e) {
       printf("PRIMITIVE PROCEDURE");
     } else if (e->value.proc->type == PROC_USER_DEFINED) {
       printf("USER DEFINED PROCEDURE WITH ARGS ");
-      for (int i; i < e->value.proc->n_args; i++) {
+      for (int i = 0; i < e->value.proc->n_args; i++) {
         printf("%s, ", e->value.proc->arg_names[i]);
       }
     } else {
@@ -541,38 +540,6 @@ make_primitive_predicate_proc(eql, is_equal);
 make_primitive_predicate_proc(gtr, is_greater);
 make_primitive_predicate_proc(lss, is_less);
 
-//struct eval_value *primitive_eql(struct eval_value *args[], int n_args) {
-//  if (n_args != 2) {
-//    fprintf(stderr, "Predicate procedure accepts only 2 arguments\n");
-//    exit(1);
-//  } else if (args[0]->type != EV_NUMBER || args[1]->type != EV_NUMBER) {
-//    fprintf(stderr, "Predicate only accepts numbers as arguments\n");
-//    exit(1);
-//  } else {
-//    // TODO: intern boolean values
-//    struct eval_value *result = malloc(sizeof (struct eval_value));
-//    result->type = EV_BOOLEAN;
-//    result->value.boolean = fabs2(args[0]->value.number - args[1]->value.number) < 1e-6;
-//    return result;
-//  }
-//};
-
-//struct eval_value *primitive_gtr(struct eval_value *args[], int n_args) {
-//  if (n_args != 2) {
-//    fprintf(stderr, "Predicate procedure accepts only 2 arguments\n");
-//    exit(1);
-//  } else if (args[0]->type != EV_NUMBER || args[1]->type != EV_NUMBER) {
-//    fprintf(stderr, "Predicate only accepts numbers as arguments\n");
-//    exit(1);
-//  } else {
-//    // TODO: intern boolean values
-//    struct eval_value *result = malloc(sizeof (struct eval_value));
-//    result->type = EV_BOOLEAN;
-//    result->value.boolean = args[0]->value.number > args[1]->value.number;
-//    return result;
-//  }
-//};
-
 void define_env_primitive_proc(
   struct env *environ,
   char *key,
@@ -679,23 +646,49 @@ void debug_eval(char *code) {
 
   eval_result = eval(&parsed_code, environ);
 
-  printf("\nRESULT:\n=======\n");
-  print_eval_value(eval_result);
-
   printf("\nENV:\n====\n");
   print_env(environ);
+
+  printf("\nRESULT:\n=======\n");
+  print_eval_value(eval_result);
 
   printf("\n");
 }
 
-int main(int argc, char **argv) {
-  debug_eval("                       \
-   (begin                            \
-    (define factorial (lambda (n)    \
-      (if (== n 1)                   \
-        1                            \
-        (* n (factorial (- n 1)))))) \
-    (factorial 6))");
+void announce_output(char *code) {
+  char *tokens[MAX_TOKENS];
+  int n_tokens;
+  struct env *environ = make_root_env();
+  struct parse_expr parsed_code;
+  struct eval_value *eval_result;
 
-  // => 720.
+  n_tokens = tokenize(code, tokens);
+  parse(tokens, &parsed_code);
+
+  eval_result = eval(&parsed_code, environ);
+
+  printf("\nRESULT:\n=======\n");
+  print_eval_value(eval_result);
+  printf("\n");
+}
+
+int main(int argc, char **argv) {
+  char program[MAX_PROGRAM_SIZE + 1];
+  int n = 0;
+  char c;
+
+  while ((c = getchar()) != EOF) {
+    if (n > MAX_PROGRAM_SIZE) {
+      fprintf(stderr, "Program is too big\n");
+      exit(1);
+    }
+    program[n++] = c;
+  }
+  program[n] = '\0';
+
+  if (argc == 2 && strcmp2(argv[1], "--debug") == 0) {
+    debug_eval(program);
+  } else {
+    announce_output(program);
+  }
 }
