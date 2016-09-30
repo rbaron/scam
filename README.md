@@ -5,12 +5,11 @@ scam is a toy/minimalistic Lisp interpreter written in C.
 
 ## Status
 
-Simple programs, such as `fib.scam` and `factorial.scam` -- which are included in the repo as examples -- work.
-
 Lacking critical features:
 
-- String manipulation primitives
-- Garbage collection
+- Garbage collection;
+- String manipulation primitives;
+- Tail recursion optimization;
 
 
 ## Compiling
@@ -19,16 +18,86 @@ Lacking critical features:
 $ make
 ```
 
-## Running
+## Examples
 
-Code is read from stdin. You can add a `--debug` switch to add debug information to the output.
+Code is read from stdin. The `examples.scam` file is interpretable. You can run it with `cat examples.scam | ./scam`. Here it is:
+
+```lisp
+;
+; Types
+;
+
+; Numeric
+42
+; => NUMBER 42.000000
+
+; String
+"Hello, world"
+; => STRING Hello, world
+
+; Boolean
+true
+; => BOOLEAN 1
+
+false
+; => BOOLEAN 0
+
+;
+; Numeric primitive operators
+;
+
+(+ 1 2)
+; => NUMBER 3.000000
+
+(* 2 (- 1 2) (/ 2 2))
+; => NUMBER -2.000000
+
+;
+; Numeric primitive predicates
+;
+
+(== 1 2)
+; => BOOLEAN 0
+
+(> 2 1)
+; => BOOLEAN 1
+
+(< 1 2)
+; => BOOLEAN 0
+
+;
+; User defined procedures
+;
+
+(define factorial (lambda (n)
+  (if (== n 1)
+    1
+    (* n (factorial (- n 1))))))
+; => USER DEFINED PROCEDURE WITH ARGS n,
+
+;
+; I/O
+;
+
+(display "6! = " (factorial 6))
+; 6! = 720.000000
+; => BOOLEAN 1
+
+(display "This is a number: " 1 " and this is another: " 2)
+; This is a number: 1.000000 and this is another: 2.000000
+; => BOOLEAN 1
+
+```
+
+
+## Debugging
+
+You can add a `--debug` switch to add debug information to the output. E.g.:
 
 - `fib.scam` - Evaluates the 8th Fibonacci number
 ```
 $ cat fib.scam | ./scam
-RESULT:
-=======
-NUMBER 21.000000
+=> NUMBER 21.000000
 ```
 
 ```
@@ -88,5 +157,5 @@ false => BOOLEAN 0
 
 RESULT:
 =======
-NUMBER 21.000000
+=> NUMBER 21.000000
 ```

@@ -1,0 +1,63 @@
+;
+; Types
+;
+
+; Numeric
+42
+; => NUMBER 42.000000
+
+; String
+"Hello, world"
+; => STRING Hello, world
+
+; Boolean
+true
+; => BOOLEAN 1
+
+false
+; => BOOLEAN 0
+
+;
+; Numeric primitive operators
+;
+
+(+ 1 2)
+; => NUMBER 3.000000
+
+(* 2 (- 1 2) (/ 2 2))
+; => NUMBER -2.000000
+
+;
+; Numeric primitive predicates
+;
+
+(== 1 2)
+; => BOOLEAN 0
+
+(> 2 1)
+; => BOOLEAN 1
+
+(< 1 2)
+; => BOOLEAN 0
+
+;
+; User defined procedures
+;
+
+(define factorial (lambda (n)
+  (if (== n 1)
+    1
+    (* n (factorial (- n 1))))))
+; => USER DEFINED PROCEDURE WITH ARGS n,
+
+;
+; I/O
+;
+
+(display "6! = " (factorial 6))
+; 6! = 720.000000
+; => BOOLEAN 1
+
+(display "This is a number: " 1 " and this is another: " 2)
+; This is a number: 1.000000 and this is another: 2.000000
+; => BOOLEAN 1
