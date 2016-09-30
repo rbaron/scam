@@ -623,7 +623,7 @@ void print_ast(struct parse_expr *root, int indent) {
   }
 }
 
-void debug_eval(char *code) {
+void announce_output(char *code, int debug) {
   char *tokens[MAX_TOKENS];
   int n_tokens;
   struct env *environ = make_root_env();
@@ -631,45 +631,26 @@ void debug_eval(char *code) {
   struct eval_value *eval_result;
 
   n_tokens = tokenize(code, tokens);
+  parse(tokens, &parsed_code);
+  eval_result = eval(&parsed_code, environ);
 
-  printf("TOKENS (%d)\n==========\n", n_tokens);
+  if (debug) {
+    printf("TOKENS (%d)\n==========\n", n_tokens);
+    for (int i = 0; i < n_tokens; i++) {
+      printf("%s, ", tokens[i]);
+    }
+    printf ("\n\n");
 
-  for (int i = 0; i < n_tokens; i++) {
-    printf("%s, ", tokens[i]);
+    printf("AST:\n====\n");
+    print_ast(&parsed_code, 0);
+
+    printf("\nENV:\n====\n");
+    print_env(environ);
+
+    printf("\nRESULT:\n=======\n");
   }
-  printf ("\n\n");
 
-  parse(tokens, &parsed_code);
-
-  printf("AST:\n====\n");
-  print_ast(&parsed_code, 0);
-
-  eval_result = eval(&parsed_code, environ);
-
-  printf("\nENV:\n====\n");
-  print_env(environ);
-
-  printf("\nRESULT:\n=======\n");
   print_eval_value(eval_result);
-
-  printf("\n");
-}
-
-void announce_output(char *code) {
-  char *tokens[MAX_TOKENS];
-  int n_tokens;
-  struct env *environ = make_root_env();
-  struct parse_expr parsed_code;
-  struct eval_value *eval_result;
-
-  n_tokens = tokenize(code, tokens);
-  parse(tokens, &parsed_code);
-
-  eval_result = eval(&parsed_code, environ);
-
-  printf("\nRESULT:\n=======\n");
-  print_eval_value(eval_result);
-  printf("\n");
 }
 
 int main(int argc, char **argv) {
@@ -686,9 +667,5 @@ int main(int argc, char **argv) {
   }
   program[n] = '\0';
 
-  if (argc == 2 && strcmp2(argv[1], "--debug") == 0) {
-    debug_eval(program);
-  } else {
-    announce_output(program);
-  }
+  announce_output(program, argc == 2 && strcmp2(argv[1], "--debug") == 0);
 }
